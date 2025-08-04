@@ -13,54 +13,25 @@
     )
 }
 
-#let xy(x, y, uw, uh) = {
-  ((x - .5) * uw, y * uh)
-}
-
-#let draw-rail-piece(x, y, d, c, uw: .5cm, uh: .5cm) = {
-  let dx = if d == "<" { -1 } else if d == ">" { 1 } else { 0 }
+#let draw-rail-piece(x, y, d, c) = {
+  let dx = if d == ">" { 100% } else if d == "<" { -100% } else { none }
   place(curve(
-    stroke: (cap: "round"),
-    curve.move(xy(x, y, uw, uh)),
-    if dx == 0 {
-      curve.line(xy(x, y + 1, uw, uh))
-    } else { curve.cubic(xy(x, y + .5, uw, uh), xy(x + dx, y + .5, uw, uh), xy(x + dx, y + 1, uw, uh)) },
+    curve.move((50%, 0%)),
+    if dx == none {
+      curve.line((50% + dx, 100%))
+    } else { curve.cubic((50%, 50%), (50% + dx, 50%), (50% + dx, 100%)) },
   ))
 }
 
-#let draw-platform(x, y, d, c, uw: .5cm, uh: .5cm) = {
-  let c = if type(c) == array { c } else { () }
+#let draw-platform(x, y, d, c) = {
   place(
-    dx: (x - .5 + 1) * uw,
-    dy: y * uh,
-    place(
-      top + if d == "<" { right } else { left },
-      box(
-        width: uw / 2,
-        height: uh,
-        place(
-          top + if d == "<" { left } else { right },
-          box(
-            height: 100%,
-            width: 80%,
-            fill: blue,
-          ),
-        ),
-      ),
-    ),
+    if d == "<" { left } else { right },
+    box(width: 33%, height: 100%, fill: blue),
   )
 }
 
-#let draw-buffer(x, y, d, c, uw: .5cm, uh: .5cm) = {
-  let dy = if d == "^" { 0 } else { 1 }
-  place(
-    dx: (x - .5) * uw,
-    dy: y * uh + dy * uh,
-    place(
-      center,
-      line(length: uw * .6),
-    ),
-  )
+#let draw-buffer(x, y, d, c) = {
+  place(if d == "^" { top } else { bottom } + center, line(length: 30%))
 }
 
 #let functions = (
@@ -75,15 +46,12 @@
   unit-height: .5cm,
   function-overrides: (:),
 ) = {
+  assert(unit-height not in (auto, none), message: "unit-height must cannot be auto or none")
+  assert(unit-width not in (auto, none), message: "unit-width must cannot be auto or none")
   if rows.len() == 0 {
     panic("No rows provided to nexus")
   }
   let functions = (functions + function-overrides)
-    .pairs()
-    .map(
-      it => (it.at(0), it.at(1).with(uw: unit-width, uh: unit-height)),
-    )
-    .to-dict()
   let cells = for row in rows {
     if type(row) == str {
       // simplified syntax
@@ -109,27 +77,28 @@
     let a = cells.flatten().map(it => it.index).sorted(key: it => it)
     (a.first(), a.last())
   }
-  block(
-    width: (x-max - x-min + 1) * unit-width,
-    height: cells.len() * unit-height,
-    {
-      place(
-        grid(
-          columns: (1fr,) * (x-max - x-min + 1),
-          rows: (1fr,) * cells.len(),
-          stroke: (thickness: .5pt, paint: gray, dash: "dashed"),
-        ),
-      )
-      for (y, row) in cells.enumerate() {
-        for c in row {
-          let x = c.at("index", default: 0)
-          let t = c.at("type", default: none)
-          let d = c.at("direction", default: ",")
-          let content = c.at("content", default: none)
+  let grid-cells = (((),) * (x-max - x-min + 1),) * cells.len()
+  for (r, row) in cells.enumerate() {
+    for raw-cell in row {
+      grid-cells.at(r).at(raw-cell.index - x-min).push(raw-cell)
+    }
+  }
+  grid(
+    columns: (unit-width,) * (x-max - x-min + 1),
+    rows: (unit-height,) * cells.len(),
+    align: top + left,
+    ..for (y, row) in grid-cells.enumerate() {
+      for (x, cell) in row.enumerate() {
+        let cell-content = for entry in cell {
+          let t = entry.at("type", default: "")
+          let d = entry.at("direction", default: "")
+          let c = entry.at("content", default: "")
           let f = functions.at(t, default: functions.at(""))
-          f(x, y, d, content)
+          let content = f(x, y, d, c)
+          content
         }
+        (grid.cell(x: x, y: y, cell-content),)
       }
-    },
+    }
   )
 }
